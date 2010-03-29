@@ -1,0 +1,18 @@
+<configuration plugin="poweradminbfbc2">
+
+  <settings name="commands">
+    <set name="runscript">100</set>
+    <set name="pb_sv_command-pbcmd">100</set>
+    <set name="serverinfo">40</set>
+    <set name="teambalance">40</set>
+    <set name="yell">20</set>
+    <set name="teams">20</set>
+  </settings>
+
+  <settings name="teambalancer">
+    <!-- on/off - if 'on' the bot will warn players contributing to 
+    make teams unbalanced -->
+    <set name="enabled">off</set>
+  </settings>
+
+</configuration>
