@@ -6,7 +6,11 @@
     <set name="serverinfo">40</set>
     <set name="teambalance">40</set>
     <set name="yell">20</set>
+	<set name="yellteam - yellt">20</set>
+	<set name="yellnmi - yelle">20</set>
+	<set name="yellplayer - yellp">20</set>
     <set name="teams">20</set>
+	<set name="pamap-map">20</set>
   </settings>
 
   <settings name="teambalancer">

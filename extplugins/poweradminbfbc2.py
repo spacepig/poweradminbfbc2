@@ -22,13 +22,14 @@
 #
 #
 #
-__version__ = '0.1'
-__author__  = 'Courgette'
+__version__ = '0.1.1'
+__author__  = 'Courgette, SpacepiG'
 
 import b3
 import b3.events
 import b3.plugin
 import string
+import time
 from b3.parsers.bfbc2.bfbc2Connection import Bfbc2CommandFailedError
 
 #--------------------------------------------------------------------------------------------------
@@ -241,9 +242,165 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
         client.message('TODO: not working yet')
         pass
     
+    def cmd_yellplayer(self, data, client, cmd=None):
+        """\
+        <msg> [<player>]- Yell message to a player
+        """
+        seconds = 5 
+        if client:
+            if not data:
+                client.message('missing parameter, try !help yellplayer')
+            else:
+                try:
+                    if len(data) == 2:
+                        try:
+                            player = data[1]
+                        except Exception, err:
+                            self.error(err)
+                    message = data[0][:99] # admin.yell support 100 char max
+                    response = self.console.write(('admin.yell', message, seconds*1000, player))
+                except Bfbc2CommandFailedError, err:
+                    self.error(err)
+                    client.message('Error: %s' % err.response)
+
+    
+    def cmd_pamap(self, data, client, cmd=None):
+        """\
+        <map> switch to given map
+        """
+        if not data:
+            client.message('You must supply a map to change to.')
+            return
+        match = self.getMapsSoundingLike(data)
+        if len(match) > 1:
+            client.message('Do you mean : %s' % string.join(match,', '))
+            return True
+        if len(match) == 1:
+            mapname = match[0]
+        else:
+            client.message('cannot find any map like [%s].' % data)
+            return False
+        
+        realMapName = self.getHardName(mapname)
+        client.message('Changing map to %s' % mapname)
+        time.sleep(1)
+        
+        self.console.write(('mapList.clear',))
+        self.console.write(('mapList.append',realMapName))
+        self.console.write(('admin.runNextLevel',))
+        self.console.write(('mapList.load',))
+        return True
+        
+    def getMapsSoundingLike(self, mapname):   
+        maplist = self.getMapNames()
+        data = mapname.lower()
+        match = []
+        if data in maplist:
+            match = [data]
+        else:
+            for m in maplist:
+                if m == data:
+                    self.debug('probable map : %s', m)
+                    match.append(m)
+ 
+        if len(match) == 0:
+            # suggest closest spellings
+            shortmaplist = []
+            for m in maplist:
+                if m.find(data) != -1:
+                    shortmaplist.append(m)
+            if len(shortmaplist) > 0:
+                #shortmaplist.sort(key=lambda map: levenshteinDistance(data, string.replace(string.replace(map.strip(), 'ut4_',''), 'ut_','')))
+                self.debug("shortmaplist sorted by distance : %s" % shortmaplist)
+                match = shortmaplist[:3]
+            else:
+                #maplist.sort(key=lambda map: levenshteinDistance(data, string.replace(string.replace(map.strip(), 'ut4_',''), 'ut_','')))
+                self.debug("maplist sorted by distance : %s" % maplist)
+                match = maplist[:3]
+        return match
      
-##################################################################################################    
-     
+##################################################################################################  
+    def getHardName(self, mapname):
+        """ Change real name to level name """
+        
+        if mapname.startswith('panama canal'):
+            return 'Levels/MP_001'
+            
+        elif mapname.startswith('val paraiso'):
+            return 'Levels/MP_002'
+
+        elif mapname.startswith('laguna alta'):
+            return 'Levels/MP_003'
+
+        elif mapname.startswith('isla inocentes'):
+            return 'Levels/MP_004'
+
+        elif mapname.startswith('atacama desert'):
+            return 'Levels/MP_005'
+
+        elif mapname.startswith('arica harbor'):
+            return 'Levels/MP_006'
+
+        elif mapname.startswith('white pass'):
+            return 'Levels/MP_007'
+
+        elif mapname.startswith('nelson bay'):
+            return 'Levels/MP_008'
+
+        elif mapname.startswith('laguna preza'):
+            return 'Levels/MP_009'
+
+        elif mapname.startswith('port valdez'):
+            return 'Levels/MP_012'
+        
+        else:
+            self.warning('unknown level name \'%s\'. Please report this on B3 forums' % mapname)
+            return mapname
+  
+    def getEasyName(self, mapname):
+        """ Change levelname to real name """
+        if mapname.startswith('Levels/MP_001'):
+            return 'panama canal'
+            
+        elif mapname.startswith('Levels/MP_002'):
+            return 'valparaiso'
+
+        elif mapname.startswith('Levels/MP_003'):
+            return 'laguna alta'
+
+        elif mapname.startswith('Levels/MP_004'):
+            return 'isla inocentes'
+
+        elif mapname.startswith('Levels/MP_005'):
+            return 'atacama desert'
+
+        elif mapname.startswith('Levels/MP_006'):
+            return 'arica harbor'
+
+        elif mapname.startswith('Levels/MP_007'):
+            return 'white pass'
+
+        elif mapname.startswith('Levels/MP_008'):
+            return 'nelson bay'
+
+        elif mapname.startswith('Levels/MP_009'):
+            return 'laguna preza'
+
+        elif mapname.startswith('Levels/MP_012'):
+            return 'port valdez'
+        
+        else:
+            self.warning('unknown level name \'%s\'. Please report this on B3 forums' % mapname)
+            return mapname
+
+    def getMapNames(self):
+        """Return the map list
+        """
+        data = self.console.write(('mapList.list',))
+        mapList = []
+        for map in data:
+            mapList.append(self.getEasyName(map))
+        return mapList 
      
     def onTeamChange(self, data, client):
         """
