@@ -3,14 +3,27 @@
   <settings name="commands">
     <set name="runscript">100</set>
     <set name="pb_sv_command-pbcmd">100</set>
-    <set name="serverinfo">40</set>
-    <set name="teambalance">40</set>
-    <set name="yell">20</set>
-	<set name="yellteam - yellt">20</set>
-	<set name="yellnmi - yelle">20</set>
-	<set name="yellplayer - yellp">20</set>
-    <set name="teams">20</set>
-	<set name="pamap-map">20</set>
+	<set name="paset">100</set>
+    <set name="paget">100</set>
+	
+	<set name="pamap-map">60</set>
+	<set name="pamaplist-maplist">60</set>
+	<set name="pacyclemap-cyclemap">60</set>
+	<set name="pamaprestart-maprestart">60</set>
+	<set name="pamapreload-mapreload">60</set>
+	<set name="pasetnextmap-setnextmap">60</set>
+	
+    <set name="paserverinfo">40</set>
+    <set name="pateambalance">40</set>
+	
+    <set name="payell-yell">20</set>
+	<set name="payellteam-yt">20</set>
+	<set name="payellenemy-ye">20</set>
+	<set name="payellplayer-yp">20</set>
+    <set name="pateams-teams">20</set>
+	<set name="paversion">20</set>
+    <set name="paident-id">20</set>
+
   </settings>
 
   <settings name="teambalancer">
