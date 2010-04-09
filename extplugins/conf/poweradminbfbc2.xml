@@ -6,12 +6,13 @@
 	<set name="paset">100</set>
     <set name="paget">100</set>
 	
-	<set name="pamap-map">60</set>
 	<set name="pamaplist-maplist">60</set>
-	<set name="pacyclemap-cyclemap">60</set>
 	<set name="pamaprestart-maprestart">60</set>
 	<set name="pamapreload-mapreload">60</set>
 	<set name="pasetnextmap-setnextmap">60</set>
+	<set name="pachangeteam-ct">60</set>
+	<set name="pakill-kill">60</set>
+	<set name="paspectate-spectate">60</set>
 	
     <set name="paserverinfo">40</set>
     <set name="pateambalance">40</set>
