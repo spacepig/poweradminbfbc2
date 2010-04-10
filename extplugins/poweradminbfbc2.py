@@ -32,7 +32,11 @@
 # Modified:
 # payell, payellteam, payellenemy, payellplayer
 #
-__version__ = '0.1.3'
+# 9/4/2010 - 0.1.3 -SpacepiG
+# Modified:
+# payell
+#
+__version__ = '0.1.4'
 __author__  = 'Courgette, SpacepiG'
 
 import b3, time, re
@@ -214,22 +218,22 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
 
     def cmd_payell(self, data, client, cmd=None):
         """\
-        <msg>:<seconds>- Yell message to all players
+        <msg>- Yell message to all players
         """
-        seconds = 3
+        seconds = 10
         if client:
             if not data:
                 client.message('missing paramter, try !help payellteam')
             else:
                 try:
-                    if len(data) == 2:
-                        try:
-                            seconds = int(data[1])
-                            if seconds > 60:
-                                seconds = 60
-                        except Exception, err:
-                            self.error(err)
-                    message = data[0][:99] # admin.yell support 100 char max
+                    #if len(data) == 2:
+                    #    try:
+                    #        seconds = int(data[1])
+                    #        if seconds > 60:
+                    #            seconds = 60
+                    #    except Exception, err:
+                    #        self.error(err)
+                    #message = data[0][:99] # admin.yell support 100 char max
                     response = self.console.write(('admin.yell', data, seconds*1000, 'all'))
                 except Bfbc2CommandFailedError, err:
                     self.error(err)
