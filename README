@@ -1,0 +1,74 @@
+###################################################################################
+#
+# PowerAdminbfbc2
+# Plugin for B3 (www.bigbrotherbot.com)
+# (c) 2010 www.xlr8or.com (mailto:xlr8or@xlr8or.com)
+#
+# This program is free software and licensed under the terms of
+# the GNU General Public License (GPL), version 2.
+#
+# http://www.gnu.org/copyleft/gpl.html
+###################################################################################
+
+PowerAdminbfbc2 (v0.1.4) for B3
+###################################################################################
+
+This plugin works for R9+ and b3 1.3+ only! This plugin adds powerfull commands 
+and functions to your b3:
+
+Added Commands:
+!payell (!yell) - display a bigtext message center screen
+
+!pamaprestart (!maprestart) - restart current map
+!pamapreload (!mapreload) - reload current map
+!paset - set a server cvar
+!paget - display a server cvar
+!pamaplist <maplist.txt> - execute a server maplist
+!pateams (!teams) - activate teambalancer (read below)
+
+!pakill (!kill) - kill a player
+!pachangeteam (!ct) - force a player to a team 
+
+!paserverinfo
+!paident (!id) <name/id> - prints a players B3-id and Guid to screen for demo purposes
+!paversion (!paver) - spits out the version of PowerAdminbfbc2
+
+Each command (except !paversion) can be leveled in the config file.
+
+Requirements:
+###################################################################################
+
+- BFBC2 Server R9 or higher
+- B3 version 1.3.0 or higher
+
+
+Installation of the B3 plugin:
+###################################################################################
+
+To install the b3-plugin part:
+
+1. Unzip the contents of this package. Go to the unzipped folder extplugins and
+place the .py file in the bots folder b3/extplugins and the config file .xml in
+the b3/extplugins/conf folder.
+
+2. Open the .xml file with your favorit editor and modify the
+levels if you want them different. Do not edit the command-names
+for they will not function under a different name.
+
+3. Open your B3.xml file (in b3/conf) and add the next line in the
+<plugins> section of the file:
+
+<plugin name="poweradminbfbc2" priority="13" config="@b3/extplugins/conf/poweradminbfbc2.xml"/>
+
+The numer 13 in this just an example. Make sure it fits your
+plugin list.
+
+
+Changelog
+###################################################################################
+v0.1.2       : Initial "public" beta release for testing
+v0.1.3		 : New commands possible due to R9 protocol
+v0.1.4		 : Cleaned up and bugfix 
+
+###################################################################################
+SpacepiG - 9 April 2010 - www.bigbrotherbot.com // www.xlr8or.com
