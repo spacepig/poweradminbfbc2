@@ -32,12 +32,15 @@
 # Modified:
 # payell, payellteam, payellenemy, payellplayer
 #
-# 9/4/2010 - 0.1.3 -SpacepiG
+# 9/4/2010 - 0.1.4 -SpacepiG
 # Modified:
 # payell
 #
-__version__ = '0.1.4'
-__author__  = 'Courgette, SpacepiG'
+# 11/4/2010 - 0.2 - Bakes
+# Rewrote many of the functions to be more efficient.
+
+__version__ = '0.2'
+__author__  = 'Courgette, SpacepiG, Bakes'
 
 import b3, time, re
 import b3.events
@@ -79,7 +82,6 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
         # Register our events
         self.verbose('Registering events')
         self.registerEvent(b3.events.EVT_CLIENT_TEAM_CHANGE)
-    
         self.debug('Started')
 
 
@@ -220,79 +222,48 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
         """\
         <msg>- Yell message to all players
         """
-        seconds = 10
-        if client:
-            if not data:
-                client.message('missing paramter, try !help payellteam')
-            else:
-                try:
-                    #if len(data) == 2:
-                    #    try:
-                    #        seconds = int(data[1])
-                    #        if seconds > 60:
-                    #            seconds = 60
-                    #    except Exception, err:
-                    #        self.error(err)
-                    #message = data[0][:99] # admin.yell support 100 char max
-                    response = self.console.write(('admin.yell', data, seconds*1000, 'all'))
-                except Bfbc2CommandFailedError, err:
-                    self.error(err)
-                    client.message('Error: %s' % err.response)
+        if not data:
+                client.message('missing parameter, try !help payell')
+                return False
+        self.console.saybig('%s: %s' % (client.exactName, data))
                     
                     
     def cmd_payellteam(self, data, client, cmd=None):
         """\
-        <msg> [<seconds>]- Yell message to all players of my team
-        """
-        seconds = 3 
-        sclient = self._adminPlugin.findClientPrompt(input[0], client)
-        myteam = self.console.getClient(sclient.cid)
-        if client:
-            if not data:
-                client.message('missing paramter, try !help payellteam')
-            else:
-                try:
-                    if len(data) == 2:
-                        try:
-                            seconds = int(data[1])
-                            if seconds > 60:
-                                seconds = 60
-                        except Exception, err:
-                            self.error(err)
-                    message = data[0][:99] # admin.yell support 100 char max
-                    response = self.console.write('admin.yell', message, seconds*1000, 'team', myteam[3])
-                except Bfbc2CommandFailedError, err:
-                    self.error(err)
-                    client.message('Error: %s' % err.response)
+        <msg> Yell message to all players of your team
+        """ 
+        if not data:
+            client.message('missing parameter, try !help payellteam')
+            return False
+        for c in self.console.clients.getList():
+            if c.team == client.team:
+                c.messagebig(data)
     
     
     def cmd_payellenemy(self, data, client, cmd=None):
         """\
-        <msg> [<seconds>]- Yell message to all players of the other team
+        <msg> - Yell message to all players of the other team
         """
-        client.message('TODO: not working yet')
-        pass
+        if not data:
+            client.message('missing parameter, try !help payellenemy')
+            return False
+        for c in self.console.clients.getList():
+            if c.team != client.team:
+                c.messagebig(data)
     
     def cmd_payellplayer(self, data, client, cmd=None):
         """\
         <msg> [<player>]- Yell message to a player
         """
-        seconds = 5 
-        if client:
-            if not data:
-                client.message('missing parameter, try !help payellplayer')
-            else:
-                try:
-                    if len(data) == 2:
-                        try:
-                            player = data[1]
-                        except Exception, err:
-                            self.error(err)
-                    message = data[0][:99] # admin.yell support 100 char max
-                    response = self.console.write(('admin.yell', message, seconds*1000, 'player', player))
-                except Bfbc2CommandFailedError, err:
-                    self.error(err)
-                    client.message('Error: %s' % err.response)
+        m = self._adminPlugin.parseUserCmd(data)
+        if not m:
+            client.message('invalid parameters, try !help payellplayer')
+            return False
+        cid, message = m
+        sclient = self._adminPlugin.findClientPrompt(cid, client)
+        if not sclient:
+            return False
+        sclient.messagebig(message)
         
         
     def cmd_paversion(self, data, client, cmd=None):
@@ -393,7 +364,7 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
                 return True
             if len(match) == 1:
                 mapname = match[0]
-                realMapName = self.getHardName(mapname)
+                realMapName = self.console.getHardName(mapname)
                 mapindex = self.console.write(('mapList.nextLevelIndex',))
                 self.console.write(('mapList.insert', mapindex, realMapName))
                 if client:
@@ -439,62 +410,49 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
             # a player matchin the name was not found, a list of closest matches will be displayed
             # we can exit here and the user will retry with a more specific player
             return False
-
-        self.console.write(('admin.yell', '%s was terminated by server admin' % sclient.name, 3000, 'all'))
+        self.console.say('%s was terminated by %s' % (sclient.exactName, client.exactName))
         self.console.write(('admin.killPlayer', sclient.cid))
-        return True
      
      
     def cmd_pachangeteam(self, data, client, cmd=None):
         """\
-        <name> - change a player to the other team
+        [<name>] - change a player to the other team
         """
         input = self._adminPlugin.parseUserCmd(data)
-        newsquad = 0 
         if not input:
-            client.message('^7Invalid data, try !help paident')
-            return False
+            sclient = client
         else:
             # input[0] is the player id
             sclient = self._adminPlugin.findClientPrompt(input[0], client)
-            myteam = self.console.getClient(sclient.cid)
-            if myteam.team == '1':
-                newteam = '2'
-            else:
-                newteam = '1' 
-            client.message(' Old teamid: %s ' % myteam.team)
-        if not sclient:
-            # a player matchin the name was not found, a list of closest matches will be displayed
-            # we can exit here and the user will retry with a more specific player
-            return False
+            if not sclient:
+                return False
+        if sclient.team == '1':
+            newteam = '2'
+        else:
+            newteam = '1' 
+        client.message(' Old teamid: %s ' % sclient.team)
      
-        self.console.write(('admin.movePlayer', sclient.cid, newteam, newsquad, 'true'))
-        cmd.sayLoudOrPM(client, ' Changed team for player: %s' % (sclient.name))
+        self.console.write(('admin.movePlayer', sclient.cid, newteam, '0', 'true'))
+        cmd.sayLoudOrPM(client, ' Changed team for player: %s' % (sclient.exactName))
         return True
         
         
     def cmd_paspectate(self, data, client, cmd=None):
         """\
-        <name> - move a player to spectate
+        [<name>] - move a player to spectate
         """
         input = self._adminPlugin.parseUserCmd(data)
-        newsquad = '0' 
-        newteam = '0'
         if not input:
-            client.message('^7Invalid data, try !help paident')
-            return False
+            sclient = client
+            if not sclient:
+                return False
         else:
             # input[0] is the player id
             sclient = self._adminPlugin.findClientPrompt(input[0], client)
-            myteam = self.console.getClient(sclient.cid)   
-        if not sclient:
-            # a player matchin the name was not found, a list of closest matches will be displayed
-            # we can exit here and the user will retry with a more specific player
-            return False
-        
-        self.console.write(('admin.movePlayer', sclient.cid, newteam, newsquad, 'true'))
+
+        self.console.write(('admin.movePlayer', sclient.cid, '0', '0', 'true'))
         cmd.sayLoudOrPM(client, ' Moved player: %s to spectate' % (sclient.name))
-        return True        
+     
         
 ##################################################################################################  
     def removeClantag(self, dirtyname):
@@ -502,90 +460,6 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
         dirtyname = self.console.stripColors(dirtyname) 
         m = re.search('(?<=' ')\w+', dirtyname)
         return (m.group(0))
-    
-    
-    
-    def getHardName(self, mapname):
-        """ Change real name to level name """
-        
-        if mapname.startswith('panama canal'):
-            return 'Levels/MP_001'
-            
-        elif mapname.startswith('val paraiso'):
-            return 'Levels/MP_002'
-
-        elif mapname.startswith('laguna alta'):
-            return 'Levels/MP_003'
-
-        elif mapname.startswith('isla inocentes'):
-            return 'Levels/MP_004'
-
-        elif mapname.startswith('atacama desert'):
-            return 'Levels/MP_005'
-
-        elif mapname.startswith('arica harbor'):
-            return 'Levels/MP_006'
-
-        elif mapname.startswith('white pass'):
-            return 'Levels/MP_007'
-
-        elif mapname.startswith('nelson bay'):
-            return 'Levels/MP_008'
-
-        elif mapname.startswith('laguna preza'):
-            return 'Levels/MP_009'
-
-        elif mapname.startswith('port valdez'):
-            return 'Levels/MP_012'
-        
-        else:
-            self.warning('unknown level name \'%s\'. Please report this on B3 forums' % mapname)
-            return mapname
-  
-    def getEasyName(self, mapname):
-        """ Change levelname to real name """
-        if mapname.startswith('Levels/MP_001'):
-            return 'panama canal'
-            
-        elif mapname.startswith('Levels/MP_002'):
-            return 'valparaiso'
-
-        elif mapname.startswith('Levels/MP_003'):
-            return 'laguna alta'
-
-        elif mapname.startswith('Levels/MP_004'):
-            return 'isla inocentes'
-
-        elif mapname.startswith('Levels/MP_005'):
-            return 'atacama desert'
-
-        elif mapname.startswith('Levels/MP_006'):
-            return 'arica harbor'
-
-        elif mapname.startswith('Levels/MP_007'):
-            return 'white pass'
-
-        elif mapname.startswith('Levels/MP_008'):
-            return 'nelson bay'
-
-        elif mapname.startswith('Levels/MP_009'):
-            return 'laguna preza'
-
-        elif mapname.startswith('Levels/MP_012'):
-            return 'port valdez'
-        
-        else:
-            self.warning('unknown level name \'%s\'. Please report this on B3 forums' % mapname)
-            return mapname
-
-    def getMapNames(self):
-        """Return the map list
-        """
-        data = self.console.write(('mapList.list',))
-        mapList = []
-        for map in data:
-            mapList.append(self.getEasyName(map))
-        return mapList 
      
     def onTeamChange(self, data, client):
         """
@@ -615,4 +489,3 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
         if client.guid in biggestteam:
             self.debug('%s has contributed to unbalance the teams')
             self._adminPlugin.warnClient(client, 'Do not make teams unbalanced !')
-            
