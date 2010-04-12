@@ -38,8 +38,12 @@
 #
 # 11/4/2010 - 0.2 - Bakes
 # Rewrote many of the functions to be more efficient.
+#
+# 12/4/2010 - 0.2.1 - Bakes
+# Added:
+# payellsquad
 
-__version__ = '0.2'
+__version__ = '0.2.1'
 __author__  = 'Courgette, SpacepiG, Bakes'
 
 import b3, time, re
@@ -237,6 +241,17 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
             return False
         for c in self.console.clients.getList():
             if c.team == client.team:
+                c.messagebig(data)
+
+    def cmd_payellsquad(self, data, client, cmd=None):
+        """\
+        <msg> Yell message to all players of your squad
+        """ 
+        if not data:
+            client.message('missing parameter, try !help payellsquad')
+            return False
+        for c in self.console.clients.getList():
+            if c.squad == client.squad and c.team == client.team:
                 c.messagebig(data)
     
     

@@ -1,36 +1,33 @@
 <configuration plugin="poweradminbfbc2">
-
-  <settings name="commands">
-    <set name="runscript">100</set>
-    <set name="pb_sv_command-pbcmd">100</set>
-	<set name="paset">100</set>
-    <set name="paget">100</set>
+	<settings name="commands">
+		<set name="runscript">100</set>
+		<set name="pb_sv_command-pbcmd">100</set>
+		<set name="paset">100</set>
+		<set name="paget">100</set>
 	
-	<set name="pamaplist-maplist">60</set>
-	<set name="pamaprestart-maprestart">60</set>
-	<set name="pamapreload-mapreload">60</set>
-	<set name="pasetnextmap-setnextmap">60</set>
-	<set name="pachangeteam-ct">60</set>
-	<set name="pakill-kill">60</set>
-	<set name="paspectate-spectate">60</set>
+		<set name="pamaplist-maplist">60</set>
+		<set name="pamaprestart-maprestart">60</set>
+		<set name="pamapreload-mapreload">60</set>
+		<set name="pasetnextmap-setnextmap">60</set>
+		<set name="pachangeteam-ct">60</set>
+		<set name="pakill-kill">60</set>
+		<set name="paspectate-spectate">60</set>
 	
-    <set name="paserverinfo">40</set>
-    <set name="pateambalance">40</set>
-	
-    <set name="payell-yell">20</set>
-	<set name="payellteam-yt">20</set>
-	<set name="payellenemy-ye">20</set>
-	<set name="payellplayer-yp">20</set>
-    <set name="pateams-teams">20</set>
-	<set name="paversion">20</set>
-    <set name="paident-id">20</set>
+		<set name="paserverinfo">40</set>
+		<set name="pateambalance">40</set>
 
-  </settings>
-
-  <settings name="teambalancer">
-    <!-- on/off - if 'on' the bot will warn players contributing to 
-    make teams unbalanced -->
-    <set name="enabled">off</set>
-  </settings>
-
+		<set name="payell-yell">20</set>
+		<set name="payellteam-yt">20</set>
+		<set name="payellenemy-ye">20</set>
+		<set name="payellplayer-yp">20</set>
+		<set name="payellsquad-ys">20</set>
+		<set name="pateams-teams">20</set>
+		<set name="paversion">20</set>
+		<set name="paident-id">20</set>
+	</settings>
+	<settings name="teambalancer">
+		<!-- on/off - if 'on' the bot will warn players contributing to 
+		make teams unbalanced -->
+		<set name="enabled">off</set>
+	</settings>
 </configuration>
