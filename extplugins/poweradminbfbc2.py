@@ -47,7 +47,6 @@
 # Modified:
 # paserverinfo
 # paset
-# Removed:
 # paident
 
 __version__ = '0.2.2'
@@ -392,6 +391,27 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
                 client.message('cannot find any map like [%s].' % data)
                 return False
       
+      
+    def cmd_paident(self, data, client, cmd=None):
+        """\
+        [<name>] - show the ip and guid of a player
+        (You can safely use the command without the 'pa' at the beginning)
+        """
+        input = self._adminPlugin.parseUserCmd(data)
+        if not input:
+            sclient = client
+        else:
+            # input[0] is the player id
+            sclient = self._adminPlugin.findClientPrompt(input[0], client)
+            if not sclient:
+                # a player matchin the name was not found, a list of closest matches will be displayed
+                # we can exit here and the user will retry with a more specific player
+                return False
+
+        cmd.sayLoudOrPM(client, ' %s %s %s' % (sclient.exactName, sclient.ip, sclient.guid))
+        return True
+        
+        
     def cmd_pakill(self, data, client, cmd=None):
         """\
         <name> - kill a player
