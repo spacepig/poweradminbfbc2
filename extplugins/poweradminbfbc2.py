@@ -42,8 +42,15 @@
 # 12/4/2010 - 0.2.1 - Bakes
 # Added:
 # payellsquad
+#
+# 12/4/2010 - 0.2.2 - Bakes
+# Modified:
+# paserverinfo
+# paset
+# Removed:
+# paident
 
-__version__ = '0.2.1'
+__version__ = '0.2.2'
 __author__  = 'Courgette, SpacepiG, Bakes'
 
 import b3, time, re
@@ -213,13 +220,12 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
         """\
         get server info
         """
-        if client:
-            try:
-                response = self.console.write(('serverInfo',))
-                client.message(str(response))
-            except Bfbc2CommandFailedError, err:
-                self.error(err)
-                client.message('Error: %s' % err.response)
+        data = self.console.write(('serverInfo',))
+        client.message('Server Name: %s' % data[0])
+        client.message('Current Players: %s' % data[1])
+        client.message('Max Players: %s' % data[2])
+        client.message('GameType: %s' % data[3])
+        client.message('Map: %s' % self.console.getEasyName(data[4]))
 
 
     def cmd_payell(self, data, client, cmd=None):
@@ -339,12 +345,10 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
         if not data:
             client.message('^7Invalid or missing data, try !help paset')
             return False
-        else:
-            # are we still here? Let's write it to console
-            input = data.split(' ',1)
-            varName = input[0]
-            value = input[1]
-            self.console.write(('vars.%s' % varName, value))
+        input = data.split(' ',1)
+        varName = input[0]
+        value = input[1]
+        self.console.write(('vars.%s' % varName, value))
 
         return True
 
@@ -388,28 +392,6 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
                 client.message('cannot find any map like [%s].' % data)
                 return False
       
-      
-    def cmd_paident(self, data, client, cmd=None):
-        """\
-        <name> - show the ip and guid of a player
-        (You can safely use the command without the 'pa' at the beginning)
-        """
-        input = self._adminPlugin.parseUserCmd(data)
-        if not input:
-            client.message('^7Invalid data, try !help paident')
-            return False
-        else:
-            # input[0] is the player id
-            sclient = self._adminPlugin.findClientPrompt(input[0], client)
-        if not sclient:
-            # a player matchin the name was not found, a list of closest matches will be displayed
-            # we can exit here and the user will retry with a more specific player
-            return False
-
-        cmd.sayLoudOrPM(client, ' %s %s %s' % (sclient.exactName, sclient.ip, sclient.guid))
-        return True
-        
-        
     def cmd_pakill(self, data, client, cmd=None):
         """\
         <name> - kill a player
