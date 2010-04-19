@@ -36,12 +36,22 @@
 # Modified:
 # payell
 #
-__version__ = '0.1.4'
+# 19/04/2010 - 0.2 - courgette
+# * add !pamatch command that allow teams to ready up and does a count down
+# * teambalancer now move players to the other team instead of just warning them.
+#   It is not scheduled yet but can be run with the !pateams command for instant
+#   balancing. If this works well, we'll schedule it
+# * fixes to !payellteam, !payellenemies, !payellplayer, !paset, !paget, !pasetnextmap
+#   !paident, !pakill, !pachangeteam, !paspectate
+#
+#
+__version__ = '0.2'
 __author__  = 'Courgette, SpacepiG'
 
 import b3, time, re
 import b3.events
 import b3.plugin
+import b3.parsers.bfbc2 as bfbc2
 import string
 from b3.parsers.bfbc2.bfbc2Connection import Bfbc2CommandFailedError
 
@@ -50,7 +60,15 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
 
     _adminPlugin = None
     _enableTeamBalancer = None
-
+    
+    _matchmode = False
+    _match_plugin_disable = []
+    _matchManager = None
+    
+    _parseUserCmdRE = re.compile(r'^(?P<cid>[^\s]{2,}|@[0-9]+)\s?(?P<parms>.*)$')
+    
+    _ignoreBalancingTill = 0
+    
     def startup(self):
         """\
         Initialize plugin settings
@@ -76,9 +94,13 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
                 if func:
                     self._adminPlugin.registerCommand(self, cmd, level, func, alias)
 
+        # do not balance on the 1st minute after bot start
+        self._ignoreBalancingTill = self.console.time() + 60
+
         # Register our events
         self.verbose('Registering events')
         self.registerEvent(b3.events.EVT_CLIENT_TEAM_CHANGE)
+        self.registerEvent(b3.events.EVT_GAME_ROUND_START)
     
         self.debug('Started')
 
@@ -94,15 +116,26 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
 
     def onLoadConfig(self):
         self.LoadTeamBalancer()
+        self.LoadMatchMode()
 
     def LoadTeamBalancer(self):
         # TEAMBALANCER SETUP
         try:
             self._enableTeamBalancer = self.config.getboolean('teambalancer', 'enabled')
         except:
-          self._enableTeamBalancer = False
-          self.debug('Using default value (%s) for Teambalancer enabled', self._enableTeamBalancer)
+            self._enableTeamBalancer = False
+            self.debug('Using default value (%s) for Teambalancer enabled', self._enableTeamBalancer)
       
+    def LoadMatchMode(self):
+        # MATCH MODE SETUP
+        self._match_plugin_disable = []
+        try:
+            self.debug('pamatch_plugins_disable/plugin : %s' %self.config.get('pamatch_plugins_disable/plugin'))
+            for e in self.config.get('pamatch_plugins_disable/plugin'):
+                self.debug('pamatch_plugins_disable/plugin : %s' %e.text)
+                self._match_plugin_disable.append(e.text)
+        except:
+            self.debug('Can\'t setup pamatch disable plugins because there is no plugins set in config')
 
 
 ##################################################################################################
@@ -111,37 +144,28 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
         """\
         Handle intercepted events
         """
-        if event.type == b3.events.EVT_CLIENT_TEAM_CHANGE and self._enableTeamBalancer:
+        if event.type == b3.events.EVT_CLIENT_TEAM_CHANGE:
             self.onTeamChange(event.data, event.client)
-
+        elif event.type == b3.events.EVT_GAME_ROUND_START:
+            # do not balance on the 1st minute after bot start
+            self._ignoreBalancingTill = self.console.time() + 60
+        elif event.type == b3.events.EVT_CLIENT_AUTH:
+            self.onClientAuth(event.data, event.client)
 
     def cmd_pateams(self ,data , client, cmd=None):
         """\
-        Will tell the team with the higher num of players to switch
+        Make the teams balanced
         """
         if client:
-            # get teams
-            team1players = []
-            team2players = []
-            for name, clientdata in self.console.getPlayerList():
-                if str(clientdata['teamId']) == '1':
-                    team1players.append(name)
-                elif str(clientdata['teamId']) == '2':
-                    team1players.append(name)
-                    
-            # if teams are unvent by one or even, then stop here
+            team1players, team2players = self.getTeams()
+            
+            # if teams are uneven by one or even, then stop here
             gap = abs(len(team1players) - len(team2players))
             if gap <= 1:
-                client.message('Teams are balanced')
-                return
+                client.message('Teams are balanced, T1: %s, T2: %s (diff: %s)' %(len(team1players), len(team2players), gap))
             else:
-                howManyMustSwitch = int(gap / 2)
-                bigTeam = 1
-                if len(team2players) > len(team1players):
-                    bigTeam = 2
-                self.console.write(('admin.say', 'WARNING: %s players from your team must switch team'%howManyMustSwitch, 'team', bigTeam))
-            if client.guid not in bigTeam:
-                client.message('The other team has been notified')
+                self.teambalance()
+
 
     def cmd_pateambalance(self, data, client=None, cmd=None):
         """\
@@ -150,19 +174,20 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
         """
         if not data:
             if client:
-                client.message("Invalid parameter, expecting 'on' or 'off'")
+                if self._enableTeamBalancer:
+                    client.message("team balancing is on")
+                else:
+                    client.message("team balancing is off")
             else:
                 self.debug('No data sent to cmd_teambalance')
         else:
-            if data in ('on', 'off'):
-                if client:
-                    client.message('Teambancer: %s' % (data))
-                else:
-                    self.debug('Teambancer: %s' % (data))
-                if data == 'off':
+            if data.lower() in ('on', 'off'):
+                if data.lower() == 'off':
                     self._enableTeamBalancer = False
-                elif data == 'on':
+                    client.message('Teambancer is now disabled')
+                elif data.lower() == 'on':
                     self._enableTeamBalancer = True
+                    client.message('Teambancer is now enabled')
             else:
                 if client:
                     client.message("Invalid data, expecting 'on' or 'off'")
@@ -226,15 +251,7 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
                 client.message('missing paramter, try !help payellteam')
             else:
                 try:
-                    #if len(data) == 2:
-                    #    try:
-                    #        seconds = int(data[1])
-                    #        if seconds > 60:
-                    #            seconds = 60
-                    #    except Exception, err:
-                    #        self.error(err)
-                    #message = data[0][:99] # admin.yell support 100 char max
-                    response = self.console.write(('admin.yell', data, seconds*1000, 'all'))
+                    response = self.console.write(('admin.yell', data[:100], seconds*1000, 'all'))
                 except Bfbc2CommandFailedError, err:
                     self.error(err)
                     client.message('Error: %s' % err.response)
@@ -242,54 +259,72 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
                     
     def cmd_payellteam(self, data, client, cmd=None):
         """\
-        <msg> [<seconds>]- Yell message to all players of my team
+        <msg> - Yell message to all players of my team
         """
         seconds = 3 
-        sclient = self._adminPlugin.findClientPrompt(input[0], client)
-        myteam = self.console.getClient(sclient.cid)
         if client:
             if not data:
                 client.message('missing paramter, try !help payellteam')
             else:
                 try:
-                    if len(data) == 2:
-                        try:
-                            seconds = int(data[1])
-                            if seconds > 60:
-                                seconds = 60
-                        except Exception, err:
-                            self.error(err)
-                    message = data[0][:99] # admin.yell support 100 char max
-                    response = self.console.write('admin.yell', message, seconds*1000, 'team', myteam[3])
+                    message = data[:100] # admin.yell support 100 char max
+                    response = self.console.write(('admin.yell', message, seconds*1000, 'team', client.teamId))
                 except Bfbc2CommandFailedError, err:
                     self.error(err)
                     client.message('Error: %s' % err.response)
     
     
-    def cmd_payellenemy(self, data, client, cmd=None):
+    def cmd_payellenemies(self, data, client, cmd=None):
         """\
         <msg> [<seconds>]- Yell message to all players of the other team
         """
-        client.message('TODO: not working yet')
-        pass
+        seconds = 3 
+        if client:
+            if not data:
+                client.message('missing paramter, try !help payellteam')
+            else:
+                try:
+                    message = data[:100] # admin.yell support 100 char max
+                    if self.console.game.gameType == bfbc2.GAMETYPE_SQDM:
+                        ## yell to other squads instead
+                        squads = [1,2,3,4]
+                        squads.remove(client.squad)
+                        for squadId in squads:
+                            self.console.write(('admin.yell', message, seconds*1000, 'squad', 0, squadId))
+                    else:
+                        otherteam = 1
+                        if client.teamId == 1:
+                            otherteam = 2                        
+                        self.console.write(('admin.yell', message, seconds*1000, 'team', otherteam))
+                except Bfbc2CommandFailedError, err:
+                    self.error(err)
+                    client.message('Error: %s' % err.response)
+    
+    
     
     def cmd_payellplayer(self, data, client, cmd=None):
         """\
-        <msg> [<player>]- Yell message to a player
+        <player> <msg> - Yell message to a player
         """
-        seconds = 5 
         if client:
-            if not data:
+            seconds = 5
+            m = self.parseUserCmd(data)
+            if not m:
+                client.message('Invalid parameters')
+                return
+    
+            cid, msg = m
+
+            if not msg:
                 client.message('missing parameter, try !help payellplayer')
             else:
+                targetClient = self._adminPlugin.findClientPrompt(cid, client)
+                if not targetClient:
+                    client.message('could not find player "%s"' % cid)
+                    return
+                
                 try:
-                    if len(data) == 2:
-                        try:
-                            player = data[1]
-                        except Exception, err:
-                            self.error(err)
-                    message = data[0][:99] # admin.yell support 100 char max
-                    response = self.console.write(('admin.yell', message, seconds*1000, 'player', player))
+                    self.console.write(('admin.yell', msg[:100], seconds*1000, 'player', targetClient.cid))
                 except Bfbc2CommandFailedError, err:
                     self.error(err)
                     client.message('Error: %s' % err.response)
@@ -309,8 +344,8 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
         (You must use the command exactly as it is! )
         """
         if not data:
-          client.message('^7Invalid or missing data, try !help pamaplist')
-          return False
+            client.message('Invalid or missing data, try !help pamaplist')
+            return False
         else:
             if re.match('^[a-z0-9_.]+.txt$', data, re.I):
                 self.debug('Loading maplist = [%s]', data)
@@ -350,17 +385,20 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
         <var> <value> - Set a server var to a certain value.
         (You must use the command exactly as it is! )
         """
-        if not data:
-            client.message('^7Invalid or missing data, try !help paset')
-            return False
-        else:
-            # are we still here? Let's write it to console
-            input = data.split(' ',1)
-            varName = input[0]
-            value = input[1]
-            self.console.write(('vars.%s' % varName, value))
+        if client:
+            if not data:
+                client.message('Invalid or missing data, try !help paset')
+            else:
+                # are we still here? Let's write it to console
+                input = data.split(' ',1)
+                varName = input[0]
+                value = input[1]
+                try:
+                    self.console.write(('vars.%s' % varName, value))
+                    client.message('%s set' % varName)
+                except Bfbc2CommandFailedError, err:
+                    client.message('ERROR setting %s : %s' % (varName, err))
 
-        return True
 
     def cmd_paget(self, data, client, cmd=None):
         """\
@@ -368,15 +406,13 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
         (You must use the command exactly as it is! )
         """
         if not data:
-            client.message('^7Invalid or missing data, try !help paget')
-            return False
+            client.message('Invalid or missing data, try !help paget')
         else:
             # are we still here? Let's write it to console
-            getvar = data.split(' ')
-            getvarvalue = self.console.getCvar(( '%s' % getvar[0],))
-            client.message('%s' % getvarvalue)
+            var = data.split(' ')
+            cvar = self.console.getCvar(var[0])
+            client.message('%s' % cvar.value)
 
-        return True
         
         
     def cmd_pasetnextmap(self, data, client=None, cmd=None):
@@ -384,23 +420,28 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
         <mapname> - Set the nextmap (partial map name works)
         """
         if not data:
-            client.message('^7Invalid or missing data, try !help setnextmap')
-            return False
+            client.message('Invalid or missing data, try !help setnextmap')
         else:
-            match = self.getMapsSoundingLike(data)
+            match = self.console.getMapsSoundingLike(data)
             if len(match) > 1:
                 client.message('do you mean : %s ?' % string.join(match,', '))
-                return True
+                return
             if len(match) == 1:
-                mapname = match[0]
-                realMapName = self.getHardName(mapname)
-                mapindex = self.console.write(('mapList.nextLevelIndex',))
-                self.console.write(('mapList.insert', mapindex, realMapName))
+                levelname = match[0]
+                
+                currentLevelCycle = self.console.write(('mapList.list',))
+                try:
+                    newIndex = currentLevelCycle.index(levelname)
+                    self.console.write(('mapList.nextLevelIndex', newIndex))
+                except ValueError:
+                    # the wanted map is not in the current cycle
+                    # insert the map in the cycle
+                    mapindex = self.console.write(('mapList.nextLevelIndex',))
+                    self.console.write(('mapList.insert', mapindex, levelname))
                 if client:
-                    cmd.sayLoudOrPM(client, 'nextmap set to %s' % mapname)
+                    cmd.sayLoudOrPM(client, 'nextmap set to %s' % self.console.getEasyName(levelname))
             else:
-                client.message('cannot find any map like [%s].' % data)
-                return False
+                client.message('do you mean : %s.' % ", ".join(data))
       
       
     def cmd_paident(self, data, client, cmd=None):
@@ -408,211 +449,384 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
         <name> - show the ip and guid of a player
         (You can safely use the command without the 'pa' at the beginning)
         """
-        input = self._adminPlugin.parseUserCmd(data)
+        input = self.parseUserCmd(data)
         if not input:
-            client.message('^7Invalid data, try !help paident')
-            return False
+            # assume the player wants his own ident
+            try:
+                cmd.sayLoudOrPM(client, '%s %s %s' % (client.cid, client.ip, client.guid))
+            except Bfbc2CommandFailedError, err:
+                client.message('Error, server replied %s' % err)
         else:
-            # input[0] is the player id
-            sclient = self._adminPlugin.findClientPrompt(input[0], client)
-        if not sclient:
-            # a player matchin the name was not found, a list of closest matches will be displayed
-            # we can exit here and the user will retry with a more specific player
-            return False
-
-        cmd.sayLoudOrPM(client, ' %s %s %s' % (sclient.exactName, sclient.ip, sclient.guid))
-        return True
+            try:
+                # input[0] is the player id
+                sclient = self._adminPlugin.findClientPrompt(input[0], client)
+                if sclient:
+                    cmd.sayLoudOrPM(client, '%s %s %s' % (sclient.cid, sclient.ip, sclient.guid))
+            except Bfbc2CommandFailedError, err:
+                client.message('Error, server replied %s' % err)
         
         
     def cmd_pakill(self, data, client, cmd=None):
         """\
-        <name> - kill a player
+        <name> <reason> - kill a player
         """
-        input = self._adminPlugin.parseUserCmd(data)
-        if not input:
-            client.message('^7Invalid data, try !help pakill')
-            return False
+        m = self.parseUserCmd(data)
+        if not m:
+            client.message('Invalid data, try !help pakill')
         else:
-            # input[0] is the player id
-            sclient = self._adminPlugin.findClientPrompt(input[0], client)
-        if not sclient:
-            # a player matchin the name was not found, a list of closest matches will be displayed
-            # we can exit here and the user will retry with a more specific player
-            return False
+            cid, keyword = m
+            reason = self._adminPlugin.getReason(keyword)
+    
+            if not reason and client.maxLevel < self._adminPlugin.config.getint('settings', 'noreason_level'):
+                client.message('ERROR: You must supply a reason')
+            else:
+                sclient = self._adminPlugin.findClientPrompt(cid, client)
+                if sclient:
+                    self.console.saybig('%s was terminated by server admin' % sclient.name)
+                    try:
+                        self.console.write(('admin.killPlayer', sclient.cid))
+                        if reason:
+                            self.console.say('%s was terminated by server admin for : %s' % (sclient.name, reason))
+                    except Bfbc2CommandFailedError, err:
+                        client.message('Error, server replied %s' % err)
+     
 
-        self.console.write(('admin.yell', '%s was terminated by server admin' % sclient.name, 3000, 'all'))
-        self.console.write(('admin.killPlayer', sclient.cid))
-        return True
-     
-     
     def cmd_pachangeteam(self, data, client, cmd=None):
         """\
         <name> - change a player to the other team
         """
-        input = self._adminPlugin.parseUserCmd(data)
-        newsquad = 0 
+        input = self.parseUserCmd(data)
         if not input:
-            client.message('^7Invalid data, try !help paident')
-            return False
+            client.message('Invalid data, try !help pachangeteam')
         else:
             # input[0] is the player id
             sclient = self._adminPlugin.findClientPrompt(input[0], client)
-            myteam = self.console.getClient(sclient.cid)
-            if myteam.team == '1':
-                newteam = '2'
-            else:
-                newteam = '1' 
-            client.message(' Old teamid: %s ' % myteam.team)
-        if not sclient:
-            # a player matchin the name was not found, a list of closest matches will be displayed
-            # we can exit here and the user will retry with a more specific player
-            return False
-     
-        self.console.write(('admin.movePlayer', sclient.cid, newteam, newsquad, 'true'))
-        cmd.sayLoudOrPM(client, ' Changed team for player: %s' % (sclient.name))
-        return True
+            if sclient:
+                if sclient.teamId == '1':
+                    newteam = '2'
+                else:
+                    newteam = '1' 
+                try:
+                    self.console.write(('admin.movePlayer', sclient.cid, newteam, 0, 'true'))
+                    cmd.sayLoudOrPM(client, '%s forced to the other team' % sclient.cid)
+                except Bfbc2CommandFailedError, err:
+                    client.message('Error, server replied %s' % err)
         
         
     def cmd_paspectate(self, data, client, cmd=None):
         """\
         <name> - move a player to spectate
         """
-        input = self._adminPlugin.parseUserCmd(data)
-        newsquad = '0' 
-        newteam = '0'
+        input = self.parseUserCmd(data)
         if not input:
-            client.message('^7Invalid data, try !help paident')
-            return False
+            client.message('Invalid data, try !help paspectate')
         else:
             # input[0] is the player id
             sclient = self._adminPlugin.findClientPrompt(input[0], client)
-            myteam = self.console.getClient(sclient.cid)   
-        if not sclient:
-            # a player matchin the name was not found, a list of closest matches will be displayed
-            # we can exit here and the user will retry with a more specific player
-            return False
+            if sclient:
+                try:
+                    self.console.write(('admin.movePlayer', sclient.cid, 0, 0, 'true'))
+                    cmd.sayLoudOrPM(client, '%s forced to spectate' % sclient.name)
+                except Bfbc2CommandFailedError, err:
+                    client.message('Error, server replied %s' % err)
         
-        self.console.write(('admin.movePlayer', sclient.cid, newteam, newsquad, 'true'))
-        cmd.sayLoudOrPM(client, ' Moved player: %s to spectate' % (sclient.name))
-        return True        
+    def cmd_pamatch(self, data, client, cmd=None): 
+        """\
+        Set server match mode on/off
+        (You can safely use the command without the 'pa' at the beginning)
+        """
+        if not data or str(data).lower() not in ('on','off'):
+            client.message('Invalid or missing data, expecting "on" or "off"')
+            return False
+        else:
+            if data.lower() == 'on':
+                
+                self._matchmode = True
+                self._enableTeamBalancer = False
+                
+                for e in self._match_plugin_disable:
+                    self.debug('Disabling plugin %s' %e)
+                    plugin = self.console.getPlugin(e)
+                    if plugin:
+                        plugin.disable()
+                        client.message('plugin %s disabled' % e)
+                
+                self._adminPlugin.registerCommand(self, 'ready', 0, self.cmd_ready)
+                
+                self.console.say('match mode: ON')
+                if self.console.game.gameType == bfbc2.GAMETYPE_SQDM:
+                    self._matchManager = SqdmMatchManager(self)
+                else:
+                    self._matchManager = MatchManager(self)
+                self._matchManager.initMatch()
+
+            elif data.lower() == 'off':
+                self._matchmode = False
+                self._matchManager.stop()
+                self._matchManager = None
+                
+                # unregister the !ready command
+                try:
+                    cmd = self._adminPlugin._commands['ready']
+                    if cmd.plugin == self:
+                        self.debug('unregister !ready command')
+                        del self._adminPlugin._commands['ready']
+                except KeyError:
+                    pass
+                
+                # enable plugins
+                for e in self._match_plugin_disable:
+                    self.debug('enabling plugin %s' %e)
+                    plugin = self.console.getPlugin(e)
+                    if plugin:
+                        plugin.enable()
+                        client.message('plugin %s enabled' % e)
+
+                self.console.say('match mode: OFF')
+                
+    def cmd_ready(self, data, client, cmd=None): 
+        """\
+        Notify other teams you are ready to start the match
+        """
+        self.debug('cmd_ready')
+        if client:
+            if self._matchmode is not True:
+                client.message('Match mode is not on')
+            elif self._matchManager:
+                self._matchManager.ready(client)
         
 ##################################################################################################  
+
+    def parseUserCmd(self, cmd, req=False):
+        """Parse command arguments to extract a player id as a first paramenter
+        from the other params
+        """
+        m = re.match(self._parseUserCmdRE, cmd)
+
+        if m:
+            cid = m.group('cid')
+            parms = m.group('parms')
+
+            if req and not len(parms): return None
+
+            if cid[:1] == "'" and cid[-1:] == "'":
+                cid = cid[1:-1]
+
+            return (cid, parms)
+        else:
+            return None
+        
+        
     def removeClantag(self, dirtyname):
         #sclient = self._adminPlugin.findClientPrompt(input[0], client)
         dirtyname = self.console.stripColors(dirtyname) 
         m = re.search('(?<=' ')\w+', dirtyname)
         return (m.group(0))
     
-    
-    
-    def getHardName(self, mapname):
-        """ Change real name to level name """
+
+    def onClientAuth(self, data, client):
+        #store the time of teamjoin for autobalancing purposes 
+        client.setvar(self, 'teamtime', self.console.time())
         
-        if mapname.startswith('panama canal'):
-            return 'Levels/MP_001'
-            
-        elif mapname.startswith('val paraiso'):
-            return 'Levels/MP_002'
-
-        elif mapname.startswith('laguna alta'):
-            return 'Levels/MP_003'
-
-        elif mapname.startswith('isla inocentes'):
-            return 'Levels/MP_004'
-
-        elif mapname.startswith('atacama desert'):
-            return 'Levels/MP_005'
-
-        elif mapname.startswith('arica harbor'):
-            return 'Levels/MP_006'
-
-        elif mapname.startswith('white pass'):
-            return 'Levels/MP_007'
-
-        elif mapname.startswith('nelson bay'):
-            return 'Levels/MP_008'
-
-        elif mapname.startswith('laguna preza'):
-            return 'Levels/MP_009'
-
-        elif mapname.startswith('port valdez'):
-            return 'Levels/MP_012'
-        
-        else:
-            self.warning('unknown level name \'%s\'. Please report this on B3 forums' % mapname)
-            return mapname
-  
-    def getEasyName(self, mapname):
-        """ Change levelname to real name """
-        if mapname.startswith('Levels/MP_001'):
-            return 'panama canal'
-            
-        elif mapname.startswith('Levels/MP_002'):
-            return 'valparaiso'
-
-        elif mapname.startswith('Levels/MP_003'):
-            return 'laguna alta'
-
-        elif mapname.startswith('Levels/MP_004'):
-            return 'isla inocentes'
-
-        elif mapname.startswith('Levels/MP_005'):
-            return 'atacama desert'
-
-        elif mapname.startswith('Levels/MP_006'):
-            return 'arica harbor'
-
-        elif mapname.startswith('Levels/MP_007'):
-            return 'white pass'
-
-        elif mapname.startswith('Levels/MP_008'):
-            return 'nelson bay'
-
-        elif mapname.startswith('Levels/MP_009'):
-            return 'laguna preza'
-
-        elif mapname.startswith('Levels/MP_012'):
-            return 'port valdez'
-        
-        else:
-            self.warning('unknown level name \'%s\'. Please report this on B3 forums' % mapname)
-            return mapname
-
-    def getMapNames(self):
-        """Return the map list
-        """
-        data = self.console.write(('mapList.list',))
-        mapList = []
-        for map in data:
-            mapList.append(self.getEasyName(map))
-        return mapList 
-     
     def onTeamChange(self, data, client):
-        """
-        will give a warning to the player if he goes to the team with 
-        the most players
-        """
+        #store the time of teamjoin for autobalancing purposes 
+        client.setvar(self, 'teamtime', self.console.time())
+        self.verbose('Client variable teamtime set to: %s' % client.var(self, 'teamtime').value)
         
-        # get teams
+        if self._enableTeamBalancer:
+            
+            if self.console.time() < self._ignoreBalancingTill:
+                return
+            
+            if client.team in (b3.TEAM_SPEC, b3.TEAM_UNKNOWN):
+                return
+            
+            # get teams
+            team1players, team2players = self.getTeams()
+            
+            # if teams are uneven by one or even, then stop here
+            if abs(len(team1players) - len(team2players)) <= 1:
+                return
+            
+            biggestteam = team1players
+            if len(team2players) > len(team1players):
+                biggestteam = team2players
+            
+            # has the current player gone contributed to making teams uneven ?
+            if client.cid in biggestteam:
+                self.debug('%s has contributed to unbalance the teams')
+                client.message('do not make teams unbalanced')
+                if client.teamId == '1':
+                    newteam = '2'
+                else:
+                    newteam = '1' 
+                try:
+                    self.console.write(('admin.movePlayer', client.cid, newteam, 0, 'true'))
+                except Bfbc2CommandFailedError, err:
+                    self.warning('Error, server replied %s' % err)
+                
+                
+    def teambalance(self):
+        if self._enableTeamBalancer:
+            # get teams
+            team1players, team2players = self.getTeams()
+            
+            # if teams are uneven by one or even, then stop here
+            gap = abs(len(team1players) - len(team2players))
+            if gap <= 1:
+                self.verbose('Teambalance: Teams are balanced, T1: %s, T2: %s (diff: %s)' %(len(team1players), len(team2players), gap))
+                return
+            
+            howManyMustSwitch = int(gap / 2)
+            bigTeam = 1
+            smallTeam = 2
+            if len(team2players) > len(team1players):
+                bigTeam = 2
+                smallTeam = 1
+                
+            self.verbose('Teambalance: Teams are NOT balanced, T1: %s, T2: %s (diff: %s)' %(len(team1players), len(team2players), gap))
+            self.console.saybig('Autobalancing Teams!')
+
+            ## we need to change team for howManyMustSwitch players from bigteam
+            playerTeamTimes = {}
+            clients = self.console.clients.getList()
+            for c in clients:
+                if c.teamId == bigTeam:
+                    teamTimeVar = c.isvar(self, 'teamtime')
+                    if not teamTimeVar:
+                        self.debug('client has no variable teamtime')
+                        c.setvar(self, 'teamtime', self.console.time())
+                        self.verbose('Client variable teamtime set to: %s' % c.var(self, 'teamtime').value)
+                    playerTeamTimes[c.cid] = teamTimeVar.value
+            
+            self.debug('playerTeamTimes: %s' % playerTeamTimes)
+            sortedPlayersTeamTimes = sorted(playerTeamTimes.iteritems(), key=lambda (k,v):(v,k))
+            self.debug('sortedPlayersTeamTimes: %s' % sortedPlayersTeamTimes)
+
+            for c, teamtime in sortedPlayersTeamTimes[:howManyMustSwitch]:
+                try:
+                    self.debug('forcing %s to the other team' % c.cid)
+                    self.console.write(('admin.movePlayer', c.cid, smallTeam, 0, 'true'))
+                except Bfbc2CommandFailedError, err:
+                    self.error(err)
+                
+                    
+    def getTeams(self):
+        """Return two lists containing the names of players from both teams"""
         team1players = []
         team2players = []
-        for name, clientdata in self.console.getPlayerList():
+        for name, clientdata in self.console.getPlayerList().iteritems():
             if str(clientdata['teamId']) == '1':
                 team1players.append(name)
             elif str(clientdata['teamId']) == '2':
                 team1players.append(name)
+        return team1players, team2players
+       
+################################################################################## 
+import threading
+class MatchManager:
+    plugin = None
+    console = None
+    countDown = 10
+    teamsReady = {
+                1: False,
+                2: False
+            }
+    running = True
+    timer = None
+    
+    def __init__(self, plugin):
+        self.plugin = plugin
+        self.console = plugin.console
+        self.console.debug('new MatchManager (%s)' % type(self))
+    
+    def stop(self):
+        self.running = False
         
-        # if teams are uneven by one or even, then stop here
-        if abs(len(team1players) - len(team2players)) <= 1:
-            self.debug("not making teams uneven")
-            return
+    def initMatch(self):
+        self.console.saybig('MATCH starting soon !!')
+        self.console.say('TEAMS LEADERS : type !ready when your team is ready')
+        self.console.saybig('TEAMS LEADERS : type !ready when your team is ready')
+        self.timer = threading.Timer(4.0, self._checkIfTeamsAreReady)
+        self.timer.start()
         
-        biggestteam = team1players
-        if len(team2players) > len(team1players):
-            biggestteam = team2players
+    def yellToTeamId(self, message, duration, teamId):
+        self.console.write(('admin.yell', message, duration, 'team', teamId))
+
+    def _checkIfTeamsAreReady(self):
+        self.console.debug('checking if all teams are ready')
+        isAllTeamReady = True
+        waitingForTeams = []
+        for teamId, isReady in self.teamsReady.items():
+            isAllTeamReady = isAllTeamReady and isReady
+            if isReady is False:
+                waitingForTeams.append(teamId)
+                self.yellToTeamId('TEAM %s leader : type !ready' % teamId, 1000, teamId)
+    
+        if len(waitingForTeams) > 0:
+            for teamId, isReady in self.teamsReady.items():
+                if teamId not in waitingForTeams:
+                    self.yellToTeamId('waiting for team(s) %s' % ', '.join([str(i) for i in waitingForTeams]), 1000, teamId)
         
-        # has the current player gone contributed to making teams uneven ?
-        if client.guid in biggestteam:
-            self.debug('%s has contributed to unbalance the teams')
-            self._adminPlugin.warnClient(client, 'Do not make teams unbalanced !')
+        if isAllTeamReady is True:
+            self.console.say('All teams are ready, starting count down')
+            self.countDown = 10
+            self.timer = threading.Timer(1.0, self._countDown)
+        else:
+            self.timer = threading.Timer(1.0, self._checkIfTeamsAreReady)
             
+        if self.running:
+            self.timer.start()
+
+    def _countDown(self):
+        self.console.debug('countdown: %s' % self.countDown)
+        if self.countDown > 0:
+            self.console.write(('admin.yell', 'MATCH STARTING IN %s' % self.countDown, 900, 'all'))
+            self.countDown -= 1
+            if self.running:
+                self.timer = threading.Timer(1.0, self._countDown)
+                self.timer.start()
+        else:    
+            # make sure to have a brief big text
+            self.console.write(('admin.yell', 'FIGHT !!!', 6000, 'all'))
+            self.console.say('Match started. GL & HF')
+
+    def ready(self, client):
+        self.console.debug('MatchManager::ready(%s [team %s])' % (client.cid, client.teamId))
+        if client.teamId in self.teamsReady:
+            if self.teamsReady[client.teamId] is True:
+                self.teamsReady[client.teamId] = False
+                client.message('Your team is not ready anymore')
+            else:
+                self.teamsReady[client.teamId] = True
+                client.message('Your team is now ready')
+    
+            
+class SqdmMatchManager(MatchManager):
+    teamsReady = {}
+    
+    def initMatch(self):
+        clients = self.console.clients.getList()
+        for c in clients:
+            if c.squad not in self.teamsReady:
+                self.teamsReady[c.squad] = False
+        self.console.say('SQDM match with %s squads' % len(self.teamsReady))
+        
+        self.console.saybig('MATCH starting soon !!')
+        self.console.say('TEAMS LEADERS : type !ready when your team is ready')
+        threading.Timer(4.0, self._checkIfTeamsAreReady).start()
+        
+        
+    def yellToTeamId(self, message, duration, teamId):
+        self.console.write(('admin.yell', message, duration, 'squad', 0, teamId))
+
+    def ready(self, client):
+        self.console.debug('SqdmMatchManager::ready(%s [squad %s])' % (client.cid, client.squad))
+        if client.squad in self.teamsReady:
+            if self.teamsReady[client.squad] is True:
+                self.teamsReady[client.squad] = False
+                client.message('Your squad is not ready anymore')
+            else:
+                self.teamsReady[client.squad] = True
+                client.message('Your squad is now ready')
+

@@ -1,36 +1,49 @@
 <configuration plugin="poweradminbfbc2">
 
-  <settings name="commands">
-    <set name="runscript">100</set>
-    <set name="pb_sv_command-pbcmd">100</set>
-	<set name="paset">100</set>
-    <set name="paget">100</set>
-	
-	<set name="pamaplist-maplist">60</set>
-	<set name="pamaprestart-maprestart">60</set>
-	<set name="pamapreload-mapreload">60</set>
-	<set name="pasetnextmap-setnextmap">60</set>
-	<set name="pachangeteam-ct">60</set>
-	<set name="pakill-kill">60</set>
-	<set name="paspectate-spectate">60</set>
-	
-    <set name="paserverinfo">40</set>
-    <set name="pateambalance">40</set>
-	
-    <set name="payell-yell">20</set>
-	<set name="payellteam-yt">20</set>
-	<set name="payellenemy-ye">20</set>
-	<set name="payellplayer-yp">20</set>
-    <set name="pateams-teams">20</set>
-	<set name="paversion">20</set>
-    <set name="paident-id">20</set>
+	<settings name="commands">
+		<set name="runscript">100</set>
+		<set name="pb_sv_command-pbcmd">100</set>
+		<set name="paset">100</set>
+		<set name="paget">100</set>
 
-  </settings>
+		<set name="pamaplist-maplist">60</set>
+		<set name="pamaprestart-maprestart">60</set>
+		<set name="pamapreload-mapreload">60</set>
+		<set name="pasetnextmap-setnextmap">60</set>
 
-  <settings name="teambalancer">
-    <!-- on/off - if 'on' the bot will warn players contributing to 
-    make teams unbalanced -->
-    <set name="enabled">off</set>
-  </settings>
+		<set name="pachangeteam-ct">60</set>
+		<set name="paspectate-spectate">60</set>
+		<set name="pakill-kill">60</set>
+
+		<set name="paserverinfo">40</set>
+		<set name="paversion">20</set>
+
+		<set name="pateambalance">40</set>
+		<set name="pateams-teams">20</set>
+
+		<set name="payell-yell">20</set>
+		<set name="payellteam-yt">20</set>
+		<set name="payellenemies-ye">20</set>
+		<set name="payellplayer-yp">20</set>
+
+		<set name="paident-id">20</set>
+
+		<!-- set match mode on/off. Will wait for teams leaders to type !ready
+			and then start a count down -->
+		<set name="pamatch-match">20</set>
+	</settings>
+
+	<settings name="teambalancer">
+		<!-- on/off - if 'on' the bot will switch players making teams unbalanced -->
+		<set name="enabled">off</set>
+	</settings>
+
+	<pamatch_plugins_disable>
+		<!-- The Plugins that need to be disabled during matchmode -->
+		<plugin>spree</plugin>
+		<plugin>adv</plugin>
+		<plugin>tk</plugin>
+		<plugin>pingwatch</plugin>
+	</pamatch_plugins_disable>
 
 </configuration>
