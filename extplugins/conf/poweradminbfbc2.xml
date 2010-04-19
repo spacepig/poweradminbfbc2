@@ -1,5 +1,4 @@
 <configuration plugin="poweradminbfbc2">
-
 	<settings name="commands">
 		<set name="runscript">100</set>
 		<set name="pb_sv_command-pbcmd">100</set>
@@ -23,8 +22,9 @@
 
 		<set name="payell-yell">20</set>
 		<set name="payellteam-yt">20</set>
-		<set name="payellenemies-ye">20</set>
+		<set name="payellenemy-ye">20</set>
 		<set name="payellplayer-yp">20</set>
+		<set name="payellsquad-ys">20</set>
 
 		<set name="paident-id">20</set>
 
@@ -45,5 +45,4 @@
 		<plugin>tk</plugin>
 		<plugin>pingwatch</plugin>
 	</pamatch_plugins_disable>
-
 </configuration>

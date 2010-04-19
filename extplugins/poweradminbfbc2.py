@@ -32,21 +32,37 @@
 # Modified:
 # payell, payellteam, payellenemy, payellplayer
 #
-# 9/4/2010 - 0.1.3 -SpacepiG
+# 9/4/2010 - 0.1.4 -SpacepiG
 # Modified:
 # payell
 #
-# 19/04/2010 - 0.2 - courgette
+# 11/4/2010 - 0.2 - Bakes
+# Rewrote many of the functions to be more efficient.
+#
+# 12/4/2010 - 0.2.1 - Bakes
+# Added:
+# payellsquad
+#
+# 12/4/2010 - 0.2.2 - Bakes
+# Modified:
+# paserverinfo
+# paset
+# paident
+#
+# 19/04/2010 - 0.3 - Courgette
 # * add !pamatch command that allow teams to ready up and does a count down
 # * teambalancer now move players to the other team instead of just warning them.
 #   It is not scheduled yet but can be run with the !pateams command for instant
 #   balancing. If this works well, we'll schedule it
 # * fixes to !payellteam, !payellenemies, !payellplayer, !paset, !paget, !pasetnextmap
 #   !paident, !pakill, !pachangeteam, !paspectate
+# 19/04/2010 - 0.3.1 - Courgette
+# * merge with Bakes
 #
 #
-__version__ = '0.2'
-__author__  = 'Courgette, SpacepiG'
+
+__version__ = '0.3.1'
+__author__  = 'Courgette, SpacepiG, Bakes'
 
 import b3, time, re
 import b3.events
@@ -101,7 +117,7 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
         self.verbose('Registering events')
         self.registerEvent(b3.events.EVT_CLIENT_TEAM_CHANGE)
         self.registerEvent(b3.events.EVT_GAME_ROUND_START)
-    
+        self.registerEvent(b3.events.EVT_CLIENT_AUTH)
         self.debug('Started')
 
 
@@ -232,102 +248,72 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
         """\
         get server info
         """
-        if client:
-            try:
-                response = self.console.write(('serverInfo',))
-                client.message(str(response))
-            except Bfbc2CommandFailedError, err:
-                self.error(err)
-                client.message('Error: %s' % err.response)
+        data = self.console.write(('serverInfo',))
+        client.message('Server Name: %s' % data[0])
+        client.message('Current Players: %s' % data[1])
+        client.message('Max Players: %s' % data[2])
+        client.message('GameType: %s' % data[3])
+        client.message('Map: %s' % self.console.getEasyName(data[4]))
 
 
     def cmd_payell(self, data, client, cmd=None):
         """\
         <msg>- Yell message to all players
         """
-        seconds = 10
-        if client:
+        if client :
             if not data:
-                client.message('missing paramter, try !help payellteam')
-            else:
-                try:
-                    response = self.console.write(('admin.yell', data[:100], seconds*1000, 'all'))
-                except Bfbc2CommandFailedError, err:
-                    self.error(err)
-                    client.message('Error: %s' % err.response)
+                client.message('missing parameter, try !help payell')
+                return False
+            self.console.saybig('%s: %s' % (client.exactName, data))
                     
                     
     def cmd_payellteam(self, data, client, cmd=None):
         """\
-        <msg> - Yell message to all players of my team
-        """
-        seconds = 3 
-        if client:
-            if not data:
-                client.message('missing paramter, try !help payellteam')
-            else:
-                try:
-                    message = data[:100] # admin.yell support 100 char max
-                    response = self.console.write(('admin.yell', message, seconds*1000, 'team', client.teamId))
-                except Bfbc2CommandFailedError, err:
-                    self.error(err)
-                    client.message('Error: %s' % err.response)
-    
-    
-    def cmd_payellenemies(self, data, client, cmd=None):
+        <msg> Yell message to all players of your team
+        """ 
+        if not data:
+            client.message('missing parameter, try !help payellteam')
+            return False
+        for c in self.console.clients.getList():
+            if c.team == client.team:
+                c.messagebig(data)
+
+    def cmd_payellsquad(self, data, client, cmd=None):
         """\
-        <msg> [<seconds>]- Yell message to all players of the other team
+        <msg> Yell message to all players of your squad
+        """ 
+        if not data:
+            client.message('missing parameter, try !help payellsquad')
+            return False
+        for c in self.console.clients.getList():
+            if c.squad == client.squad and c.team == client.team:
+                c.messagebig(data)
+    
+    
+    def cmd_payellenemy(self, data, client, cmd=None):
+        """\
+        <msg> - Yell message to all players of the other team
         """
-        seconds = 3 
-        if client:
-            if not data:
-                client.message('missing paramter, try !help payellteam')
-            else:
-                try:
-                    message = data[:100] # admin.yell support 100 char max
-                    if self.console.game.gameType == bfbc2.GAMETYPE_SQDM:
-                        ## yell to other squads instead
-                        squads = [1,2,3,4]
-                        squads.remove(client.squad)
-                        for squadId in squads:
-                            self.console.write(('admin.yell', message, seconds*1000, 'squad', 0, squadId))
-                    else:
-                        otherteam = 1
-                        if client.teamId == 1:
-                            otherteam = 2                        
-                        self.console.write(('admin.yell', message, seconds*1000, 'team', otherteam))
-                except Bfbc2CommandFailedError, err:
-                    self.error(err)
-                    client.message('Error: %s' % err.response)
-    
-    
-    
+        if not data:
+            client.message('missing parameter, try !help payellenemy')
+            return False
+        for c in self.console.clients.getList():
+            if c.team != client.team:
+                c.messagebig(data)
+
     def cmd_payellplayer(self, data, client, cmd=None):
         """\
         <player> <msg> - Yell message to a player
         """
-        if client:
-            seconds = 5
-            m = self.parseUserCmd(data)
-            if not m:
-                client.message('Invalid parameters')
-                return
-    
-            cid, msg = m
-
-            if not msg:
-                client.message('missing parameter, try !help payellplayer')
-            else:
-                targetClient = self._adminPlugin.findClientPrompt(cid, client)
-                if not targetClient:
-                    client.message('could not find player "%s"' % cid)
-                    return
-                
-                try:
-                    self.console.write(('admin.yell', msg[:100], seconds*1000, 'player', targetClient.cid))
-                except Bfbc2CommandFailedError, err:
-                    self.error(err)
-                    client.message('Error: %s' % err.response)
+        m = self._adminPlugin.parseUserCmd(data)
+        if not m:
+            client.message('invalid parameters, try !help payellplayer')
+            return False
+        cid, message = m
+        sclient = self._adminPlugin.findClientPrompt(cid, client)
+        if not sclient:
+            return False
+        sclient.messagebig(message)
         
         
     def cmd_paversion(self, data, client, cmd=None):
@@ -400,6 +386,7 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
                     client.message('ERROR setting %s : %s' % (varName, err))
 
 
+
     def cmd_paget(self, data, client, cmd=None):
         """\
         <var> - Returns the value of a servervar.
@@ -446,7 +433,7 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
       
     def cmd_paident(self, data, client, cmd=None):
         """\
-        <name> - show the ip and guid of a player
+        [<name>] - show the ip and guid of a player
         (You can safely use the command without the 'pa' at the beginning)
         """
         input = self.parseUserCmd(data)
@@ -493,7 +480,7 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
 
     def cmd_pachangeteam(self, data, client, cmd=None):
         """\
-        <name> - change a player to the other team
+        [<name>] - change a player to the other team
         """
         input = self.parseUserCmd(data)
         if not input:
@@ -515,7 +502,7 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
         
     def cmd_paspectate(self, data, client, cmd=None):
         """\
-        <name> - move a player to spectate
+        [<name>] - move a player to spectate
         """
         input = self.parseUserCmd(data)
         if not input:
