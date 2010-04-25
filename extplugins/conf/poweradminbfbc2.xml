@@ -5,6 +5,11 @@
 		<set name="paset">100</set>
 		<set name="paget">100</set>
 
+		<set name="parush-rush">60</set>
+		<set name="paconquest-conq">60</set>
+		<set name="pasqdm-sqdm">60</set>
+		<set name="pasqrush-sqru">60</set>
+		
 		<set name="pamaplist-maplist">60</set>
 		<set name="pamaprestart-maprestart">60</set>
 		<set name="pamapreload-mapreload">60</set>

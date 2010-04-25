@@ -58,10 +58,13 @@
 #   !paident, !pakill, !pachangeteam, !paspectate
 # 19/04/2010 - 0.3.1 - Courgette
 # * merge with Bakes
-#
-#
+# 25/04/2010 - 0.4 - Courgette
+# * match mode now requires all players to type !ready
+# * make sure to reset the ready state for all players when !match on 
+# * add tests for match mode
+# * add !parush !paconquest !pasqdm !pasqrush commands to change mod
 
-__version__ = '0.3.1'
+__version__ = '0.4'
 __author__  = 'Courgette, SpacepiG, Bakes'
 
 import b3, time, re
@@ -541,10 +544,9 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
                 self._adminPlugin.registerCommand(self, 'ready', 0, self.cmd_ready)
                 
                 self.console.say('match mode: ON')
-                if self.console.game.gameType == bfbc2.GAMETYPE_SQDM:
-                    self._matchManager = SqdmMatchManager(self)
-                else:
-                    self._matchManager = MatchManager(self)
+                if self._matchManager:
+                    self._matchManager.stop()
+                self._matchManager = MatchManager(self)
                 self._matchManager.initMatch()
 
             elif data.lower() == 'off':
@@ -581,6 +583,48 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
                 client.message('Match mode is not on')
             elif self._matchManager:
                 self._matchManager.ready(client)
+                
+
+
+    def _changeMode(self, data, client, cmd=None, mode=None):
+        if mode is None:
+            self.error('mode cannot be None')
+        elif mode not in ('CONQUEST', 'RUSH', 'SQDM', 'SQRUSH'):
+            self.error('invalid game mode %s' % mode)
+        else:
+            try:
+                self.console.write(('admin.setPlaylist', mode))
+                client.message('Server playlist changed to %s' % mode)
+                client.message('type !map <some map> to change server mode now')
+            except Bfbc2CommandFailedError, err:
+                client.message('Failed to change game mode. Server replied with: %s' % err)
+            
+    def cmd_paconquest(self, data, client, cmd=None): 
+        """\
+        change server mode to CONQUEST
+        """
+        self._changeMode(data, client, cmd, mode='CONQUEST')
+        
+    def cmd_parush(self, data, client, cmd=None): 
+        """\
+        change server mode to RUSH
+        """
+        self._changeMode(data, client, cmd, mode='RUSH')
+        
+    def cmd_pasqdm(self, data, client, cmd=None): 
+        """\
+        change server mode to SQDM
+        """
+        self._changeMode(data, client, cmd, mode='SQDM')
+        
+    def cmd_pasqrush(self, data, client, cmd=None): 
+        """\
+        change server mode to SQRUSH
+        """
+        self._changeMode(data, client, cmd, mode='SQRUSH')
+        
+      
+                
         
 ##################################################################################################  
 
@@ -714,53 +758,57 @@ import threading
 class MatchManager:
     plugin = None
     console = None
+    playersReady = {}
     countDown = 10
-    teamsReady = {
-                1: False,
-                2: False
-            }
     running = True
     timer = None
     
     def __init__(self, plugin):
         self.plugin = plugin
         self.console = plugin.console
-        self.console.debug('new MatchManager (%s)' % type(self))
     
     def stop(self):
+        try: self.timer.cancel()
+        except: pass
         self.running = False
         
     def initMatch(self):
+        for c in self.console.clients.getList():
+            c.setvar(self.plugin, 'ready', False)
         self.console.saybig('MATCH starting soon !!')
-        self.console.say('TEAMS LEADERS : type !ready when your team is ready')
-        self.console.saybig('TEAMS LEADERS : type !ready when your team is ready')
-        self.timer = threading.Timer(4.0, self._checkIfTeamsAreReady)
+        self.console.say('ALL PLAYERS : type !ready when you are ready')
+        self.console.saybig('ALL PLAYERS : type !ready when you are ready')
+        self.timer = threading.Timer(10.0, self._checkIfEveryoneIsReady)
         self.timer.start()
         
-    def yellToTeamId(self, message, duration, teamId):
-        self.console.write(('admin.yell', message, duration, 'team', teamId))
+    def yellToClient(self, message, duration, client):
+        """We need this to bypass the message queue managed by the BFBC2 parser"""
+        self.console.write(('admin.yell', message, duration, 'player', client.cid))
 
-    def _checkIfTeamsAreReady(self):
-        self.console.debug('checking if all teams are ready')
-        isAllTeamReady = True
-        waitingForTeams = []
-        for teamId, isReady in self.teamsReady.items():
-            isAllTeamReady = isAllTeamReady and isReady
+    def _checkIfEveryoneIsReady(self):
+        self.console.debug('checking if all players are ready')
+        isAllPlayersReady = True
+        waitingForPlayers = []
+        for c in self.console.clients.getList():
+            isReady = c.var(self.plugin, 'ready', False).value
+            self.console.debug('is %s ready ? %s' % (c.cid, isReady))
             if isReady is False:
-                waitingForTeams.append(teamId)
-                self.yellToTeamId('TEAM %s leader : type !ready' % teamId, 1000, teamId)
+                waitingForPlayers.append(c)
+                self.yellToClient('we are waiting for you. type !ready', 10000, c)
+                isAllPlayersReady = False
     
-        if len(waitingForTeams) > 0:
-            for teamId, isReady in self.teamsReady.items():
-                if teamId not in waitingForTeams:
-                    self.yellToTeamId('waiting for team(s) %s' % ', '.join([str(i) for i in waitingForTeams]), 1000, teamId)
+        if len(waitingForPlayers) > 0 and len(waitingForPlayers) <= 6:
+            self.console.say('waiting for %s' % ', '.join([c.cid for c in waitingForPlayers]))
         
-        if isAllTeamReady is True:
-            self.console.say('All teams are ready, starting count down')
+        try: self.timer.cancel()
+        except: pass
+        
+        if isAllPlayersReady is True:
+            self.console.say('All players are ready, starting count down')
             self.countDown = 10
-            self.timer = threading.Timer(1.0, self._countDown)
+            self.timer = threading.Timer(0.9, self._countDown)
         else:
-            self.timer = threading.Timer(1.0, self._checkIfTeamsAreReady)
+            self.timer = threading.Timer(10.0, self._checkIfEveryoneIsReady)
             
         if self.running:
             self.timer.start()
@@ -777,43 +825,207 @@ class MatchManager:
             # make sure to have a brief big text
             self.console.write(('admin.yell', 'FIGHT !!!', 6000, 'all'))
             self.console.say('Match started. GL & HF')
+            self.console.write(('admin.restartMap',))
 
     def ready(self, client):
-        self.console.debug('MatchManager::ready(%s [team %s])' % (client.cid, client.teamId))
-        if client.teamId in self.teamsReady:
-            if self.teamsReady[client.teamId] is True:
-                self.teamsReady[client.teamId] = False
-                client.message('Your team is not ready anymore')
-            else:
-                self.teamsReady[client.teamId] = True
-                client.message('Your team is now ready')
+        self.console.debug('MatchManager::ready(%s)' % client.cid)
+        wasReady = client.var(self.plugin, 'ready', False).value
+        if wasReady:
+            client.setvar(self.plugin, 'ready', False)
+            self.yellToClient('You are not ready anymore', 3000, client)
+            client.message('You are not ready anymore')
+        else:
+            client.setvar(self.plugin, 'ready', True)
+            self.yellToClient('You are now ready', 3000, client)
+            client.message('You are now ready')
+        self._checkIfEveryoneIsReady()
+
+
+
+
+
+if __name__ == '__main__':
+    import time
     
+    from b3.fake import fakeConsole
+    fakeConsole.gameName = 'bfbc2'
+
+    from b3.fake import joe, simon, moderator, superadmin
             
-class SqdmMatchManager(MatchManager):
-    teamsReady = {}
+    from b3.config import XmlConfigParser
+    conf = XmlConfigParser()
+    conf.setXml("""
+    <configuration plugin="poweradminbfbc2">
+        <settings name="commands">
+            <set name="runscript">100</set>
+            <set name="pb_sv_command-pbcmd">100</set>
+            <set name="paset">100</set>
+            <set name="paget">100</set>
     
-    def initMatch(self):
-        clients = self.console.clients.getList()
-        for c in clients:
-            if c.squad not in self.teamsReady:
-                self.teamsReady[c.squad] = False
-        self.console.say('SQDM match with %s squads' % len(self.teamsReady))
-        
-        self.console.saybig('MATCH starting soon !!')
-        self.console.say('TEAMS LEADERS : type !ready when your team is ready')
-        threading.Timer(4.0, self._checkIfTeamsAreReady).start()
-        
-        
-    def yellToTeamId(self, message, duration, teamId):
-        self.console.write(('admin.yell', message, duration, 'squad', 0, teamId))
+            <set name="parush-rush">60</set>
+            <set name="paconquest-conq">60</set>
+            <set name="pasqdm-sqdm">60</set>
+            <set name="pasqrush-sqru">60</set>
+            
+            <set name="pamaplist-maplist">60</set>
+            <set name="pamaprestart-maprestart">60</set>
+            <set name="pamapreload-mapreload">60</set>
+            <set name="pasetnextmap-setnextmap">60</set>
+    
+            <set name="pachangeteam-ct">60</set>
+            <set name="paspectate-spectate">60</set>
+            <set name="pakill-kill">60</set>
+    
+            <set name="paserverinfo">40</set>
+            <set name="paversion">20</set>
+    
+            <set name="pateambalance">40</set>
+            <set name="pateams-teams">20</set>
+    
+            <set name="payell-yell">20</set>
+            <set name="payellteam-yt">20</set>
+            <set name="payellenemy-ye">20</set>
+            <set name="payellplayer-yp">20</set>
+            <set name="payellsquad-ys">20</set>
+    
+            <set name="paident-id">20</set>
+    
+            <!-- set match mode on/off. Will wait for teams leaders to type !ready
+                and then start a count down -->
+            <set name="pamatch-match">20</set>
+        </settings>
+    
+        <settings name="teambalancer">
+            <!-- on/off - if 'on' the bot will switch players making teams unbalanced -->
+            <set name="enabled">off</set>
+        </settings>
+    
+        <pamatch_plugins_disable>
+            <!-- The Plugins that need to be disabled during matchmode -->
+            <plugin>spree</plugin>
+            <plugin>adv</plugin>
+            <plugin>tk</plugin>
+            <plugin>pingwatch</plugin>
+        </pamatch_plugins_disable>
+    </configuration>
+    """)
 
-    def ready(self, client):
-        self.console.debug('SqdmMatchManager::ready(%s [squad %s])' % (client.cid, client.squad))
-        if client.squad in self.teamsReady:
-            if self.teamsReady[client.squad] is True:
-                self.teamsReady[client.squad] = False
-                client.message('Your squad is not ready anymore')
-            else:
-                self.teamsReady[client.squad] = True
-                client.message('Your squad is now ready')
+    
+    ## create an instance of the plugin to test
+    p = Poweradminbfbc2Plugin(fakeConsole, conf)
+    p.onStartup()
 
+    joe.connects('Joe')
+    simon.connects('Simon')
+    moderator.connects('Mod')
+    
+    def testMatch1():
+        print """-----------------------
+        usual scenario"""
+        moderator.says('!match on')
+        time.sleep(1)
+        
+        joe.says('!ready')
+        time.sleep(1)
+    
+        simon.says('!ready')
+        time.sleep(1)
+    
+        moderator.says('!ready')
+        time.sleep(15)
+        p._matchManager.stop()
+        
+    def testMatch2():
+        print """-----------------------
+        joe types !ready a second time"""
+        moderator.says('!match on')
+        time.sleep(1)
+        
+        joe.says('!ready')
+        time.sleep(1)
+    
+        simon.says('!ready')
+        time.sleep(1)
+
+        joe.says('!ready')
+        time.sleep(1)
+    
+        moderator.says('!ready')
+        time.sleep(15)
+        
+        p._matchManager.stop()
+        
+    def testMatch3():
+        print """-----------------------
+        moderator types !match off"""
+        moderator.says('!match on')
+        time.sleep(1)
+        
+        joe.says('!ready')
+        time.sleep(1)
+    
+        simon.says('!ready')
+        time.sleep(1)
+    
+        moderator.says('!match off')
+        time.sleep(15)
+        
+        print "p._matchManager : %s" % p._matchManager
+
+    def testMatch4():
+        print """-----------------------
+        moderator types !match on a second time"""
+        moderator.says('!match on')
+        time.sleep(1)
+        
+        joe.says('!ready')
+        time.sleep(1)
+    
+        simon.says('!ready')
+        time.sleep(1)
+    
+        moderator.says('!match on')
+        time.sleep(15)
+        
+        joe.says('!ready')
+        time.sleep(1)
+    
+        simon.says('!ready')
+        time.sleep(12)
+        
+        moderator.says('!ready')
+        
+        time.sleep(12)
+        print "p._matchManager : %s" % p._matchManager
+        
+        
+    def testMatch5():
+        print """-----------------------
+        a player got kicked"""
+        p.console.PunkBuster = None
+        
+        moderator.says('!match on')
+        time.sleep(1)
+        
+        joe.says('!ready')
+        time.sleep(1)
+    
+        moderator.says('!ready')
+        time.sleep(15)
+        
+        simon.kick('AFL')
+        time.sleep(30)
+        p._matchManager.stop()
+
+    def testServerModeChange():
+        superadmin.connects('Superman')
+        superadmin.says('!parush')
+        superadmin.says('!rush')
+        superadmin.says('!pasqrush')
+        superadmin.says('!pasqru')
+        superadmin.says('!paconquest')
+        superadmin.says('!conq')
+        superadmin.says('!pasqrush')
+        superadmin.says('!sqru')
+        
+    testServerModeChange()
