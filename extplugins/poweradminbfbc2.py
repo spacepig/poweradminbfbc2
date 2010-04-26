@@ -63,8 +63,11 @@
 # * make sure to reset the ready state for all players when !match on 
 # * add tests for match mode
 # * add !parush !paconquest !pasqdm !pasqrush commands to change mod
+# 26/04/2010 - 0.5 - Courgette
+# * move cmd_ready to the MatchManager class
+# * a player cannot unready once the match countdown started
 
-__version__ = '0.4'
+__version__ = '0.5'
 __author__  = 'Courgette, SpacepiG, Bakes'
 
 import b3, time, re
@@ -541,8 +544,6 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
                         plugin.disable()
                         client.message('plugin %s disabled' % e)
                 
-                self._adminPlugin.registerCommand(self, 'ready', 0, self.cmd_ready)
-                
                 self.console.say('match mode: ON')
                 if self._matchManager:
                     self._matchManager.stop()
@@ -551,17 +552,9 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
 
             elif data.lower() == 'off':
                 self._matchmode = False
-                self._matchManager.stop()
+                if self._matchManager:
+                    self._matchManager.stop()
                 self._matchManager = None
-                
-                # unregister the !ready command
-                try:
-                    cmd = self._adminPlugin._commands['ready']
-                    if cmd.plugin == self:
-                        self.debug('unregister !ready command')
-                        del self._adminPlugin._commands['ready']
-                except KeyError:
-                    pass
                 
                 # enable plugins
                 for e in self._match_plugin_disable:
@@ -573,19 +566,6 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
 
                 self.console.say('match mode: OFF')
                 
-    def cmd_ready(self, data, client, cmd=None): 
-        """\
-        Notify other teams you are ready to start the match
-        """
-        self.debug('cmd_ready')
-        if client:
-            if self._matchmode is not True:
-                client.message('Match mode is not on')
-            elif self._matchManager:
-                self._matchManager.ready(client)
-                
-
-
     def _changeMode(self, data, client, cmd=None, mode=None):
         if mode is None:
             self.error('mode cannot be None')
@@ -757,30 +737,52 @@ class Poweradminbfbc2Plugin(b3.plugin.Plugin):
 import threading
 class MatchManager:
     plugin = None
+    _adminPlugin = None
     console = None
     playersReady = {}
     countDown = 10
     running = True
     timer = None
+    countdownStarted = None
     
     def __init__(self, plugin):
         self.plugin = plugin
         self.console = plugin.console
+        self._adminPlugin = self.console.getPlugin('admin')
+        if not self._adminPlugin:
+            # something is wrong, can't start without admin plugin
+            raise Exception('Could not find admin plugin')
     
     def stop(self):
         try: self.timer.cancel()
         except: pass
         self.running = False
+        self.unregisterCommandReady()
         
     def initMatch(self):
         for c in self.console.clients.getList():
             c.setvar(self.plugin, 'ready', False)
+        self.countdownStarted = False
+        self.registerCommandReady()
         self.console.saybig('MATCH starting soon !!')
         self.console.say('ALL PLAYERS : type !ready when you are ready')
         self.console.saybig('ALL PLAYERS : type !ready when you are ready')
         self.timer = threading.Timer(10.0, self._checkIfEveryoneIsReady)
         self.timer.start()
-        
+    
+    def registerCommandReady(self):
+        self._adminPlugin.registerCommand(self.plugin, 'ready', 0, self.cmd_ready)
+    
+    def unregisterCommandReady(self):
+        # unregister the !ready command
+        try:
+            cmd = self._adminPlugin._commands['ready']
+            if cmd.plugin == self.plugin:
+                self.plugin.debug('unregister !ready command')
+                del self._adminPlugin._commands['ready']
+        except KeyError:
+            pass
+    
     def yellToClient(self, message, duration, client):
         """We need this to bypass the message queue managed by the BFBC2 parser"""
         self.console.write(('admin.yell', message, duration, 'player', client.cid))
@@ -791,7 +793,7 @@ class MatchManager:
         waitingForPlayers = []
         for c in self.console.clients.getList():
             isReady = c.var(self.plugin, 'ready', False).value
-            self.console.debug('is %s ready ? %s' % (c.cid, isReady))
+            self.plugin.debug('is %s ready ? %s' % (c.cid, isReady))
             if isReady is False:
                 waitingForPlayers.append(c)
                 self.yellToClient('we are waiting for you. type !ready', 10000, c)
@@ -806,6 +808,7 @@ class MatchManager:
         if isAllPlayersReady is True:
             self.console.say('All players are ready, starting count down')
             self.countDown = 10
+            self.countdownStarted = True
             self.timer = threading.Timer(0.9, self._countDown)
         else:
             self.timer = threading.Timer(10.0, self._checkIfEveryoneIsReady)
@@ -814,7 +817,7 @@ class MatchManager:
             self.timer.start()
 
     def _countDown(self):
-        self.console.debug('countdown: %s' % self.countDown)
+        self.plugin.debug('countdown: %s' % self.countDown)
         if self.countDown > 0:
             self.console.write(('admin.yell', 'MATCH STARTING IN %s' % self.countDown, 900, 'all'))
             self.countDown -= 1
@@ -826,19 +829,26 @@ class MatchManager:
             self.console.write(('admin.yell', 'FIGHT !!!', 6000, 'all'))
             self.console.say('Match started. GL & HF')
             self.console.write(('admin.restartMap',))
+            self.stop()
 
-    def ready(self, client):
-        self.console.debug('MatchManager::ready(%s)' % client.cid)
-        wasReady = client.var(self.plugin, 'ready', False).value
-        if wasReady:
-            client.setvar(self.plugin, 'ready', False)
-            self.yellToClient('You are not ready anymore', 3000, client)
-            client.message('You are not ready anymore')
+    def cmd_ready(self, data, client, cmd=None): 
+        """\
+        Notify other teams you are ready to start the match
+        """
+        self.plugin.debug('MatchManager::ready(%s)' % client.cid)
+        if self.countdownStarted:
+            client.message('Count down already started. You cannot change your ready state')
         else:
-            client.setvar(self.plugin, 'ready', True)
-            self.yellToClient('You are now ready', 3000, client)
-            client.message('You are now ready')
-        self._checkIfEveryoneIsReady()
+            wasReady = client.var(self.plugin, 'ready', False).value
+            if wasReady:
+                client.setvar(self.plugin, 'ready', False)
+                self.yellToClient('You are not ready anymore', 3000, client)
+                client.message('You are not ready anymore')
+            else:
+                client.setvar(self.plugin, 'ready', True)
+                self.yellToClient('You are now ready', 3000, client)
+                client.message('You are now ready')
+            self._checkIfEveryoneIsReady()
 
 
 
@@ -1016,6 +1026,27 @@ if __name__ == '__main__':
         simon.kick('AFL')
         time.sleep(30)
         p._matchManager.stop()
+        
+    def testMatch6():
+        print """-----------------------
+        a player tries to type !ready after the count down started"""
+        p.console.PunkBuster = None
+        
+        moderator.says('!match on')
+        time.sleep(1)
+        
+        joe.says('!ready')
+        time.sleep(1)
+    
+        moderator.says('!ready')
+        time.sleep(1)
+        
+        simon.says('!ready')
+        time.sleep(5)
+        
+        simon.says('!ready')
+        time.sleep(10)
+        p._matchManager.stop()
 
     def testServerModeChange():
         superadmin.connects('Superman')
@@ -1028,4 +1059,4 @@ if __name__ == '__main__':
         superadmin.says('!pasqrush')
         superadmin.says('!sqru')
         
-    testServerModeChange()
+    testMatch6()
